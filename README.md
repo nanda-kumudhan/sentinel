@@ -1,46 +1,29 @@
 # Sentinel
 
-Sentinel is a local, isolated container lab for authorized network and SSH
-testing. It starts five Ubuntu SSH victims, a Debian-based attacker toolbox,
-and a Kafka/Zookeeper pair on one private Docker network. Authentication
-events flow through a versioned JSON schema to Kafka, are persisted by the
-consumer in PostgreSQL, and are correlated across the fleet.
+Sentinel is a small, local security lab. It creates five Linux containers to
+act as SSH targets, an attacker container with Hydra and Nmap, and a Kafka +
+PostgreSQL pipeline for collecting and correlating login failures.
 
-> Use this lab only on systems and accounts you own or are explicitly
-> authorized to test. The credentials below are intentionally weak for local
-> training and must not be reused outside this lab.
+Use it only on systems you own or are allowed to test. Everything runs on a
+private Docker network. The lab username is `labuser` and the password is
+`sentinel-lab`.
 
-## Requirements
+## Start it
 
-- Docker Engine with Docker Compose
-- Python 3.10+ (for the optional virtual environment)
-
-## Start the lab
+You need Docker Compose and Python 3.
 
 ```bash
+cd ~/Github/sentinel
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
 docker compose up -d --build
 docker compose ps
 ```
 
-The services use the private `sentinel_net` bridge network and are addressable
-by service name:
+## Try it
 
-| Service | Hostname | Purpose |
-| --- | --- | --- |
-| `victim1`-`victim5` | matching service name | Ubuntu SSH targets |
-| `attacker` | `attacker` | Debian toolbox with `nmap`, `hydra`, and SSH client |
-| `zookeeper` | `zookeeper` | Kafka coordination |
-| `kafka` | `kafka` | Kafka broker on port `9092` inside the network |
-| `postgres` | `postgres` | PostgreSQL event and alert store |
-| `consumer` | `consumer` | Kafka-to-PostgreSQL consumer and correlation service |
-
-## Verify connectivity and SSH
-
-Run the included checks from the attacker container:
+Check that the containers can see each other and that SSH works:
 
 ```bash
 docker compose exec attacker /usr/local/bin/check-lab.sh
@@ -49,63 +32,40 @@ docker compose exec attacker ssh -o StrictHostKeyChecking=no \
   labuser@victim1 'hostname && id'
 ```
 
-  Each victim also runs `/usr/local/bin/auth-agent.py`. It checks for a usable
-  systemd journal first and otherwise tails `/var/log/auth.log`, emitting JSON
-  events for failed SSH logins. Five failures from one source IP within 30
-  seconds produce a local `repeated_ssh_failures` alert in the victim's
-  container logs:
+Each victim watches its SSH log. Five failures from the same IP within
+30 seconds produce a local alert:
 
-  ```bash
-  docker compose logs -f victim1
-  ```
+```bash
+docker compose logs -f victim1
+```
 
-## Detection components
+The agents also send JSON events to Kafka. The consumer stores them in
+PostgreSQL and raises a distributed brute-force alert when one IP reaches
+three victims within 60 seconds. Those alerts are tagged with MITRE ATT&CK
+technique `T1110` (Brute Force).
 
-`sentinel/event_schema.py` is the shared version-1 event contract. The victim
-agent continues to print local JSON and, when `KAFKA_BOOTSTRAP_SERVERS` is set,
-publishes the same event to `security-events`. The consumer validates events,
-stores them in `security_events`, and stores correlation alerts in
-`security_alerts`. A distributed brute-force alert is emitted when one source
-IP reaches at least three distinct hosts within 60 seconds and is tagged with
-MITRE ATT&CK `T1110` (Brute Force).
-
-`sentinel/anomaly.py` provides an optional scikit-learn Isolation Forest
-training/scoring API for downstream analysis; it is deliberately separate from
-the streaming consumer so a model can be trained with an operator-selected
-baseline.
-
-The attacker toolbox includes authorized lab-only demonstrations:
+The attacker container includes two lab demonstrations:
 
 ```bash
 docker compose exec attacker /usr/local/bin/hydra-bruteforce.sh victim1
 docker compose exec attacker /usr/local/bin/nmap-recon.sh victim1
 ```
 
-Run unit tests with `pytest -q`. Bring up the full pipeline with
-`docker compose up -d --build`, inspect events with
-`docker compose exec postgres psql -U sentinel -d sentinel`, and tear it down
-with `docker compose down -v`.
+The project also includes an optional Isolation Forest model in
+`sentinel/anomaly.py`. It gives unusual events a lower anomaly score, but it
+is currently a separate batch experiment rather than part of the live
+consumer.
 
-### Design decisions
+## Development
 
-- JSON over Kafka keeps the agent lightweight and makes events inspectable.
-- PostgreSQL JSONB preserves the raw event while identity columns support
-  future dashboards and queries.
-- Correlation is deterministic and timestamp-based, making it testable without
-  Kafka or a database. Isolation Forest remains an opt-in batch module.
-- All services use the existing private bridge network; no victim SSH ports
-  are published to the host.
-
-  The lab credentials are `labuser` / `sentinel-lab`. Stop and remove the lab
-  with:
+Run the tests with:
 
 ```bash
-docker compose down
+pytest -q
 ```
 
-## Files
+Stop the lab and remove its database volume with:
 
-- `docker-compose.yml` defines the complete fleet and private network.
-- `docker/victim/Dockerfile` builds the SSH-enabled victim image.
-- `docker/attacker/Dockerfile` builds the network-testing toolbox.
-- `requirements.txt` contains optional Python tooling dependencies.
+```bash
+docker compose down -v
+```
