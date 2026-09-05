@@ -1,7 +1,7 @@
 # Sentinel
 
-Sentinel is a small, local security lab. It creates five Linux containers to
-act as SSH targets, an attacker container with Hydra and Nmap, and a Kafka +
+Sentinel is a small, local security lab. It creates five Debian 13 containers
+to act as SSH targets, an attacker container with Hydra and Nmap, and a Kafka +
 PostgreSQL pipeline for collecting and correlating login failures.
 
 Use it only on systems you own or are allowed to test. Everything runs on a
