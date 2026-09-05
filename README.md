@@ -45,8 +45,18 @@ docker compose exec attacker ssh -o StrictHostKeyChecking=no \
   labuser@victim1 'hostname && id'
 ```
 
-The lab credentials are `labuser` / `sentinel-lab`. Stop and remove the lab
-with:
+  Each victim also runs `/usr/local/bin/auth-agent.py`. It checks for a usable
+  systemd journal first and otherwise tails `/var/log/auth.log`, emitting JSON
+  events for failed SSH logins. Five failures from one source IP within 30
+  seconds produce a local `repeated_ssh_failures` alert in the victim's
+  container logs:
+
+  ```bash
+  docker compose logs -f victim1
+  ```
+
+  The lab credentials are `labuser` / `sentinel-lab`. Stop and remove the lab
+  with:
 
 ```bash
 docker compose down
