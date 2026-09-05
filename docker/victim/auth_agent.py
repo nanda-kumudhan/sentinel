@@ -10,6 +10,9 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime
 
+from sentinel.event_schema import SecurityEvent, now_iso
+from sentinel.producer import EventProducer
+
 WINDOW_SECONDS = 30
 FAILURE_THRESHOLD = 5
 
@@ -40,11 +43,8 @@ def event_from(line):
     if not match:
         return None
     username = match.group("user") or match.group("invalid_user")
-    return {
-        "timestamp": timestamp_for(line),
-        "source_ip": match.group("ip"),
-        "username": username,
-    }
+    return {"timestamp": timestamp_for(line), "source_ip": match.group("ip"),
+            "username": username}
 
 
 def journal_available():
@@ -99,6 +99,10 @@ def main():
         lines = lines_from_auth_log()
         source = "/var/log/auth.log"
     print(json.dumps({"agent": "ssh-auth-baseline", "log_source": source}), flush=True)
+    producer = EventProducer(
+        os.environ.get("KAFKA_BOOTSTRAP_SERVERS", ""),
+        os.environ.get("KAFKA_TOPIC", "security-events"),
+    ) if os.environ.get("KAFKA_BOOTSTRAP_SERVERS") else None
 
     try:
         for line in lines:
@@ -111,7 +115,13 @@ def main():
             recent.append(now)
             while recent and now - recent[0] > WINDOW_SECONDS:
                 recent.popleft()
-            print(json.dumps({"event": "ssh_login_failure", **event}), flush=True)
+            payload = SecurityEvent(
+                event="ssh_login_failure", host=os.environ.get("HOSTNAME", "unknown"),
+                **event,
+            ).to_dict()
+            print(json.dumps(payload), flush=True)
+            if producer:
+                producer.send(payload)
             if len(recent) >= FAILURE_THRESHOLD and source_ip not in alerted:
                 alerted.add(source_ip)
                 print(
@@ -130,6 +140,8 @@ def main():
     finally:
         if journal_process is not None:
             journal_process.terminate()
+        if producer:
+            producer.close()
 
 
 if __name__ == "__main__":

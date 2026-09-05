@@ -1,8 +1,11 @@
 services:
   victim1:
     build:
-      context: ./docker/victim
+      context: .
+      dockerfile: docker/victim/Dockerfile
     hostname: victim1
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     networks:
       - sentinel_net
     healthcheck:
@@ -13,8 +16,11 @@ services:
 
   victim2:
     build:
-      context: ./docker/victim
+      context: .
+      dockerfile: docker/victim/Dockerfile
     hostname: victim2
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     networks:
       - sentinel_net
     healthcheck:
@@ -25,8 +31,11 @@ services:
 
   victim3:
     build:
-      context: ./docker/victim
+      context: .
+      dockerfile: docker/victim/Dockerfile
     hostname: victim3
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     networks:
       - sentinel_net
     healthcheck:
@@ -37,8 +46,11 @@ services:
 
   victim4:
     build:
-      context: ./docker/victim
+      context: .
+      dockerfile: docker/victim/Dockerfile
     hostname: victim4
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     networks:
       - sentinel_net
     healthcheck:
@@ -49,8 +61,11 @@ services:
 
   victim5:
     build:
-      context: ./docker/victim
+      context: .
+      dockerfile: docker/victim/Dockerfile
     hostname: victim5
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     networks:
       - sentinel_net
     healthcheck:
@@ -61,7 +76,8 @@ services:
 
   attacker:
     build:
-      context: ./docker/attacker
+      context: .
+      dockerfile: docker/attacker/Dockerfile
     hostname: attacker
     depends_on:
       victim1:
@@ -78,6 +94,8 @@ services:
         condition: service_started
       zookeeper:
         condition: service_started
+      postgres:
+        condition: service_healthy
     networks:
       - sentinel_net
 
@@ -108,7 +126,41 @@ services:
     networks:
       - sentinel_net
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sentinel
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sentinel_net
+
+  consumer:
+    build:
+      context: .
+      dockerfile: docker/consumer/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/sentinel
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - sentinel_net
+
 networks:
   sentinel_net:
     name: sentinel_net
     driver: bridge
+
+volumes:
+  postgres_data:
