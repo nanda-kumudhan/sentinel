@@ -1,0 +1,114 @@
+services:
+  victim1:
+    build:
+      context: ./docker/victim
+    hostname: victim1
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim2:
+    build:
+      context: ./docker/victim
+    hostname: victim2
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim3:
+    build:
+      context: ./docker/victim
+    hostname: victim3
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim4:
+    build:
+      context: ./docker/victim
+    hostname: victim4
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim5:
+    build:
+      context: ./docker/victim
+    hostname: victim5
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  attacker:
+    build:
+      context: ./docker/attacker
+    hostname: attacker
+    depends_on:
+      victim1:
+        condition: service_healthy
+      victim2:
+        condition: service_healthy
+      victim3:
+        condition: service_healthy
+      victim4:
+        condition: service_healthy
+      victim5:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      zookeeper:
+        condition: service_started
+    networks:
+      - sentinel_net
+
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    hostname: zookeeper
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    networks:
+      - sentinel_net
+
+  kafka:
+    image: bitnami/kafka:3.9
+    hostname: kafka
+    depends_on:
+      zookeeper:
+        condition: service_started
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_LISTENERS: CLIENT://:9092,EXTERNAL://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: CLIENT://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: CLIENT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9093:9093"
+    networks:
+      - sentinel_net
+
+networks:
+  sentinel_net:
+    name: sentinel_net
+    driver: bridge
